@@ -4,15 +4,21 @@ import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
 export const chatWithPdf = action({
   args: {
     userInput: v.string(),
     fileId: v.string(),
   },
   handler: async (ctx, args) => {
-    // 1. Fetch labeled context from ingest.js
+    // 1. Initialize Groq INSIDE the handler
+    // This ensures it only runs when the function is called, not at deployment time.
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error("GROQ_API_KEY is not set in the Convex Dashboard");
+    }
+
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+    // 2. Fetch labeled context from ingest.js
     const context = await ctx.runAction(api.ingest.searchSimiliarChunks, {
       query: args.userInput,
       fileId: args.fileId,
@@ -20,7 +26,7 @@ export const chatWithPdf = action({
 
     const contextText = context || "No relevant context found in the document.";
 
-    // 2. Optimized RAG Prompt for Llama 3.3 70B
+    // 3. Optimized RAG Prompt for Llama 3.3 70B
     const systemPrompt = `
       You are a precise PDF research assistant. Your goal is to answer questions using ONLY the provided snippets.
       
@@ -46,7 +52,7 @@ export const chatWithPdf = action({
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
         ],
-        temperature: 0.1, // Lower temperature is better for factual citations
+        temperature: 0.1, 
         max_tokens: 1024,
       });
 
